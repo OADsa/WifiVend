@@ -1,4 +1,5 @@
-30 Minutes|2.00|30
-1 Hour|3.50|60
-2 Hours|6.00|120
-5 Hours|12.00|300
+1|30 Minutes|30|2.00|Active
+2|1 Hour|60|3.50|Active
+3|2 Hours|120|6.00|Active
+4|5 Hours|300|12.00|Active
+6|Student Promo|340|13.00|Active

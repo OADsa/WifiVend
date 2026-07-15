@@ -2,3 +2,4 @@ testuser|testpass|100.00
 kris|qwe|1.50
 Teys|tiyo|20.00
 eyden|engk|26.00
+Odda|dada|17.00
