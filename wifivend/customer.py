@@ -286,7 +286,7 @@ def display_packages(affordable_only=False):
         return []
     
     for i, p in enumerate(packages, 1):
-        print(f"{i:<5} {p['name']:<15} {p['duration']:<12} mins ${p['price']:.2f}")
+        print(f"{i:<5} {p['name']:<15} {f"{p['duration']} mins":<12} ${p['price']:.2f}")
     return packages
 
 
@@ -354,7 +354,7 @@ def purchase_package():
         return
 
     try:
-        choice = get_valid_input("\nSelect package number: ", int,
+        choice = get_valid_input("\nSelect package number(1/2/3/4): ", int,
                                  lambda x: 1 <= x <= len(packages))
     except ValueError:
         print("Invalid selection.")
