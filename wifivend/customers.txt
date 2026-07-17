@@ -1,2 +1,2 @@
 testuser|testpass|100.00
-kris|qwe|1.50
+kris|qwe|111.50
