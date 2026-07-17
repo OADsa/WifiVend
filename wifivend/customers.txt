@@ -1,4 +1,4 @@
 testuser|testpass|100.00
-Teys|tiyo|20.00
+Teys|tiyo|30.00
 eyden|engk|26.00
 Odda|dada|17.00
