@@ -9,24 +9,13 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from common import clear_screen, press_enter, print_header
 from customer import customer_menu
 from admin import admin_menu
 
 
-def clear_screen():
-    """Clear the terminal screen."""
-    os.system('cls' if os.name == 'nt' else 'clear')
-
-
-def press_enter():
-    """Wait for user to press Enter to continue."""
-    input("\nPress Enter to continue...")
-
-
 def print_main_menu():
-    print("\n" + "=" * 50)
-    print(" " * 12 + "WiFiVend System")
-    print("=" * 50)
+    print_header("Main Menu: WifiVend!")
     print("  1. Customer")
     print("  2. Administrator")
     print("  3. Exit")

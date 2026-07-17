@@ -4,33 +4,49 @@ Administrator module for WiFiVend.
 """
 
 import os
+import shutil
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-PACKAGES_FILE = os.path.join(BASE_DIR, "packages.txt")
-PURCHASES_FILE = os.path.join(BASE_DIR, "purchases.txt")
-CUSTOMERS_FILE = os.path.join(BASE_DIR, "customers.txt")
+from common import (
+    clear_screen, press_enter, print_header, print_centered, print_separator,
+    get_valid_input, PACKAGES_FILE, PURCHASES_FILE, CUSTOMERS_FILE,
+    load_packages, save_packages, get_next_package_id, is_duplicate_package,
+    load_customers, save_customers,
+    load_admin_credentials, save_admin_credentials,
+)
 
-
-def clear_screen():
-    """Clear the terminal screen."""
-    os.system('cls' if os.name == 'nt' else 'clear')
-
-
-def press_enter():
-    """Wait for user to press Enter to continue."""
-    input("\nPress Enter to continue...")
-
-
-def print_header(title):
-    """Print a formatted section header."""
-    print("\n" + "=" * 50)
-    print(f" {title}")
-    print("=" * 50)
+TRANSACTION_HEADER = (
+    f"{'Customer':<15} {'Package':<15} {'Price':<10} {'Voucher':<10} "
+    f"{'Purchased':<20} {'Expires':<20}"
+)
+TRANSACTION_TABLE_WIDTH = len(TRANSACTION_HEADER)
+COMPACT_TRANSACTION_WIDTH = 53
 
 
-def print_separator(char="-", length=50):
-    """Print a separator line."""
-    print(char * length)
+def print_transaction_heading(title):
+    """Print a transaction heading suited to the current terminal width."""
+    is_wide = shutil.get_terminal_size(fallback=(80, 24)).columns >= TRANSACTION_TABLE_WIDTH
+    width = TRANSACTION_TABLE_WIDTH if is_wide else COMPACT_TRANSACTION_WIDTH
+
+    print_header(title, width=width)
+    if is_wide:
+        print(TRANSACTION_HEADER)
+    print_separator(length=width)
+    return is_wide, width
+
+
+def print_transaction(parts, is_wide, width):
+    """Print one transaction without wrapping in narrow terminals."""
+    if is_wide:
+        print(
+            f"{parts[0]:<15} {parts[1]:<15} ${parts[2]:<9} "
+            f"{parts[3]:<10} {parts[4]:<20} {parts[5]:<20}"
+        )
+    else:
+        print(f"Customer:  {parts[0]:<15} Voucher: {parts[3]}")
+        print(f"Package:   {parts[1]:<15} Price: ${parts[2]}")
+        print(f"Purchased: {parts[4]}")
+        print(f"Expires:   {parts[5]}")
+    print_separator(length=width)
 
 
 def admin_login():
@@ -40,7 +56,8 @@ def admin_login():
     username = input("Username: ").strip()
     password = input("Password: ").strip()
 
-    if username == "admin" and password == "admin123":
+    creds = load_admin_credentials()
+    if username == creds["username"] and password == creds["password"]:
         print("Login successful!")
         press_enter()
         return True
@@ -48,74 +65,6 @@ def admin_login():
         print("Invalid username or password.")
         press_enter()
         return False
-
-
-def get_valid_input(prompt, input_type=str, validation=None):
-    """Get and validate user input."""
-    while True:
-        try:
-            value = input(prompt).strip()
-            if input_type == int:
-                value = int(value)
-            elif input_type == float:
-                value = float(value)
-            
-            if validation and not validation(value):
-                print("Invalid input. Please try again.")
-                continue
-            return value
-        except ValueError:
-            print(f"Please enter a valid {input_type.__name__}.")
-
-
-def load_packages():
-    """Load packages from text file."""
-    packages = []
-    if not os.path.exists(PACKAGES_FILE):
-        return packages
-    with open(PACKAGES_FILE, "r") as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                parts = line.split("|")
-                packages.append({
-                    "name": parts[0],
-                    "price": float(parts[1]),
-                    "duration": int(parts[2])
-                })
-    return packages
-
-
-def save_packages(packages):
-    """Save packages list back to text file."""
-    with open(PACKAGES_FILE, "w") as f:
-        for p in packages:
-            f.write(f"{p['name']}|{p['price']:.2f}|{p['duration']}\n")
-
-
-def load_customers():
-    """Load customers from text file."""
-    customers = []
-    if not os.path.exists(CUSTOMERS_FILE):
-        return customers
-    with open(CUSTOMERS_FILE, "r") as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                parts = line.split("|")
-                customers.append({
-                    "username": parts[0],
-                    "password": parts[1],
-                    "balance": float(parts[2])
-                })
-    return customers
-
-
-def save_customers(customers):
-    """Save customers list back to text file."""
-    with open(CUSTOMERS_FILE, "w") as f:
-        for c in customers:
-            f.write(f"{c['username']}|{c['password']}|{c['balance']:.2f}\n")
 
 
 def view_all_customers():
@@ -183,18 +132,13 @@ def view_all_transactions():
         press_enter()
         return
 
-    print_header("All Transactions")
-    print(f"{'Customer':<15} {'Package':<15} {'Price':<10} {'Voucher':<10}")
-    print(f"{'Purchased':<20} {'Expires':<20}")
-    print_separator()
+    is_wide, table_width = print_transaction_heading("All Transactions")
     with open(PURCHASES_FILE, "r") as f:
         for line in f:
             line = line.strip()
             if line:
                 parts = line.split("|")
-                print(f"{parts[0]:<15} {parts[1]:<15} ${parts[2]:<9} {parts[3]:<10}")
-                print(f"{parts[4]:<20} {parts[5]:<20}")
-                print_separator()
+                print_transaction(parts, is_wide, table_width)
     press_enter()
 
 
@@ -208,19 +152,14 @@ def search_transactions():
     search_name = input("Enter customer name to search: ").strip().lower()
     found = False
 
-    print_header("Search Results")
-    print(f"{'Customer':<15} {'Package':<15} {'Price':<10} {'Voucher':<10}")
-    print(f"{'Purchased':<20} {'Expires':<20}")
-    print_separator()
+    is_wide, table_width = print_transaction_heading("Search Results")
     with open(PURCHASES_FILE, "r") as f:
         for line in f:
             line = line.strip()
             if line:
                 parts = line.split("|")
                 if search_name in parts[0].lower():
-                    print(f"{parts[0]:<15} {parts[1]:<15} ${parts[2]:<9} {parts[3]:<10}")
-                    print(f"{parts[4]:<20} {parts[5]:<20}")
-                    print_separator()
+                    print_transaction(parts, is_wide, table_width)
                     found = True
     if not found:
         print("No transactions found for that customer.")
@@ -246,9 +185,11 @@ def view_total_sales():
 
 
 def add_new_package():
-    """Add a new WiFi package."""
+    """Add a new WiFi package, rejecting duplicates by duration or price."""
+    packages = load_packages()
+
     print_header("Add New WiFi Package")
-    name = input("Package name (e.g., 3 Hours): ").strip()
+    name = input("Package name (e.g., 3 Hours, Student Promo): ").strip()
     if not name:
         print("Package name cannot be empty.")
         press_enter()
@@ -262,43 +203,116 @@ def add_new_package():
         press_enter()
         return
 
-    with open(PACKAGES_FILE, "a") as f:
-        f.write(f"{name}|{price:.2f}|{duration}\n")
+    conflict = is_duplicate_package(packages, duration, price)
+    if conflict:
+        print(f"\nCannot add package: '{conflict['name']}' already uses the "
+              f"same duration or price ({conflict['duration']} mins, "
+              f"${conflict['price']:.2f}).")
+        print("Please use a different duration and price.")
+        press_enter()
+        return
+
+    new_package = {
+        "id": get_next_package_id(packages),
+        "name": name,
+        "duration": duration,
+        "price": price,
+        "status": "Active",
+    }
+    packages.append(new_package)
+    save_packages(packages)
     print("Package added successfully.")
     press_enter()
 
 
-def edit_package_price():
-    """Edit the price of an existing package."""
+def view_all_packages():
+    """Display all packages in a clean, readable table."""
+    packages = load_packages()
+
+    print_header("View Packages")
+    if not packages:
+        print("No packages available.")
+        press_enter()
+        return
+
+    print(f"{'ID':<4} {'Name':<20} {'Duration':<12} {'Price':<10} {'Status':<10}")
+    print_separator()
+    for p in packages:
+        duration_str = f"{p['duration']} mins"
+        print(f"{p['id']:<4} {p['name']:<20} {duration_str:<12} ${p['price']:<9.2f} {p['status']:<10}")
+    press_enter()
+
+
+def edit_package():
+    """Edit an existing package's duration and/or price. Supports cancelling."""
     packages = load_packages()
     if not packages:
         print("\nNo packages available.")
         press_enter()
         return
 
-    print_header("Edit Package Price")
+    print_header("Edit Package")
     for i, p in enumerate(packages, 1):
-        print(f"{i}. {p['name']} - ${p['price']:.2f} ({p['duration']} mins)")
+        print(f"{i}. [{p['status']}] {p['name']} - {p['duration']} mins - ${p['price']:.2f}")
+    cancel_option = len(packages) + 1
+    print(f"{cancel_option}. Cancel")
 
     try:
         choice = get_valid_input("\nEnter package number to edit: ", int,
-                                 lambda x: 1 <= x <= len(packages))
+                                 lambda x: 1 <= x <= cancel_option)
     except ValueError:
         print("Invalid selection.")
         press_enter()
         return
 
-    try:
-        new_price = get_valid_input(f"Enter new price for {packages[choice-1]['name']}: $",
-                                    float, lambda x: x >= 0)
-    except ValueError:
-        print("Invalid price. Please enter a number.")
+    if choice == cancel_option:
+        print("Edit cancelled.")
         press_enter()
         return
 
-    packages[choice - 1]["price"] = new_price
+    package = packages[choice - 1]
+    print(f"\nEditing: {package['name']} (ID {package['id']})")
+    print("  1. Edit Duration")
+    print("  2. Edit Price")
+    print("  3. Edit Both")
+    print("  4. Cancel")
+    sub_choice = input("Select option: ").strip()
+
+    new_duration = package["duration"]
+    new_price = package["price"]
+
+    try:
+        if sub_choice == '1':
+            new_duration = get_valid_input("Enter new duration (minutes): ", int, lambda x: x > 0)
+        elif sub_choice == '2':
+            new_price = get_valid_input("Enter new price ($): ", float, lambda x: x >= 0)
+        elif sub_choice == '3':
+            new_duration = get_valid_input("Enter new duration (minutes): ", int, lambda x: x > 0)
+            new_price = get_valid_input("Enter new price ($): ", float, lambda x: x >= 0)
+        elif sub_choice == '4':
+            print("Edit cancelled.")
+            press_enter()
+            return
+        else:
+            print("Invalid option. Edit cancelled.")
+            press_enter()
+            return
+    except ValueError:
+        print("Invalid input. Edit cancelled.")
+        press_enter()
+        return
+
+    conflict = is_duplicate_package(packages, new_duration, new_price, exclude_id=package["id"])
+    if conflict:
+        print(f"\nCannot save: '{conflict['name']}' already uses the same "
+              f"duration or price. Please choose different values.")
+        press_enter()
+        return
+
+    package["duration"] = new_duration
+    package["price"] = new_price
     save_packages(packages)
-    print("Package price updated successfully.")
+    print("Package updated successfully.")
     press_enter()
 
 
@@ -334,6 +348,67 @@ def delete_package():
     press_enter()
 
 
+def change_admin_credentials():
+    """Allow the admin to change username, password, or both."""
+    creds = load_admin_credentials()
+
+    print_header("Change Admin Credentials")
+    print_centered(f"Current Username: {creds['username']}")
+
+    current_password = input("\nEnter current password to continue: ").strip()
+    if current_password != creds["password"]:
+        print("Incorrect password. No changes were made.")
+        press_enter()
+        return
+
+    print("\n  1. Change Username Only")
+    print("  2. Change Password Only")
+    print("  3. Change Both Username and Password")
+    print("  4. Cancel")
+    choice = input("Select option: ").strip()
+
+    new_username = creds["username"]
+    new_password = creds["password"]
+
+    if choice == '1':
+        new_username = input("Enter new username: ").strip()
+        if not new_username:
+            print("Username cannot be empty. No changes were made.")
+            press_enter()
+            return
+    elif choice == '2':
+        new_password = input("Enter new password: ").strip()
+        if not new_password:
+            print("Password cannot be empty. No changes were made.")
+            press_enter()
+            return
+    elif choice == '3':
+        new_username = input("Enter new username: ").strip()
+        new_password = input("Enter new password: ").strip()
+        if not new_username or not new_password:
+            print("Username/password cannot be empty. No changes were made.")
+            press_enter()
+            return
+    elif choice == '4':
+        print("Change cancelled.")
+        press_enter()
+        return
+    else:
+        print("Invalid option. No changes were made.")
+        press_enter()
+        return
+
+    confirm = input("Save new credentials? (y/n): ").strip().lower()
+    if confirm != 'y':
+        print("Change cancelled.")
+        press_enter()
+        return
+
+    save_admin_credentials(new_username, new_password)
+    print("Admin credentials updated successfully.")
+    press_enter()
+
+
 def admin_menu():
     """Administrator menu loop with login."""
     if not admin_login():
@@ -341,18 +416,18 @@ def admin_menu():
 
     while True:
         clear_screen()
-        print("\n" + "=" * 50)
-        print(" " * 12 + "ADMINISTRATOR MENU")
-        print("=" * 50)
+        print_header("Administrator Menu")
         print("  1. View All Transactions")
         print("  2. Search Transactions by Customer Name")
         print("  3. View Total Sales")
         print("  4. Add New WiFi Package")
-        print("  5. Edit Package Price")
+        print("  5. Edit Package")
         print("  6. Delete Package")
-        print("  7. View All Customers")
-        print("  8. Reset Customer Password")
-        print("  9. Back to Main Menu")
+        print("  7. View Packages")
+        print("  8. View All Customers")
+        print("  9. Reset Customer Password")
+        print(" 10. Change Admin Credentials")
+        print(" 11. Back to Main Menu")
         print("=" * 50)
 
         choice = input("Select option: ").strip()
@@ -366,14 +441,18 @@ def admin_menu():
         elif choice == '4':
             add_new_package()
         elif choice == '5':
-            edit_package_price()
+            edit_package()
         elif choice == '6':
             delete_package()
         elif choice == '7':
-            view_all_customers()
+            view_all_packages()
         elif choice == '8':
-            reset_customer_password()
+            view_all_customers()
         elif choice == '9':
+            reset_customer_password()
+        elif choice == '10':
+            change_admin_credentials()
+        elif choice == '11':
             break
         else:
             print("Invalid option. Please try again.")

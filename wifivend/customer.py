@@ -10,106 +10,23 @@ import random
 import string
 from datetime import datetime, timedelta
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-PACKAGES_FILE = os.path.join(BASE_DIR, "packages.txt")
-PURCHASES_FILE = os.path.join(BASE_DIR, "purchases.txt")
-CUSTOMERS_FILE = os.path.join(BASE_DIR, "customers.txt")
+from common import (
+    clear_screen, press_enter, print_header, print_centered, print_separator,
+    get_valid_input, PURCHASES_FILE,
+    load_customers, save_customers, find_customer, update_customer_balance,
+    load_packages,
+)
 
 # Global variable to track current logged-in customer
 current_customer = None
 
 
-def clear_screen():
-    """Clear the terminal screen."""
-    os.system('cls' if os.name == 'nt' else 'clear')
-
-
-def press_enter():
-    """Wait for user to press Enter to continue."""
-    input("\nPress Enter to continue...")
-
-
-def print_header(title):
-    """Print a formatted section header."""
-    print("\n" + "=" * 50)
-    print(f" {title}")
-    print("=" * 50)
-
-
-def print_separator(char="-", length=50):
-    """Print a separator line."""
-    print(char * length)
-
-
-def get_valid_input(prompt, input_type=str, validation=None):
-    """Get and validate user input."""
-    while True:
-        try:
-            value = input(prompt).strip()
-            if input_type == int:
-                value = int(value)
-            elif input_type == float:
-                value = float(value)
-            
-            if validation and not validation(value):
-                print("Invalid input. Please try again.")
-                continue
-            return value
-        except ValueError:
-            print(f"Please enter a valid {input_type.__name__}.")
-
-
 # ==================== CUSTOMER AUTHENTICATION ====================
-
-def load_customers():
-    """Load customers from text file."""
-    customers = []
-    if not os.path.exists(CUSTOMERS_FILE):
-        return customers
-    with open(CUSTOMERS_FILE, "r") as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                parts = line.split("|")
-                customers.append({
-                    "username": parts[0],
-                    "password": parts[1],
-                    "balance": float(parts[2])
-                })
-    return customers
-
-
-def save_customers(customers):
-    """Save customers list back to text file."""
-    with open(CUSTOMERS_FILE, "w") as f:
-        for c in customers:
-            f.write(f"{c['username']}|{c['password']}|{c['balance']:.2f}\n")
-
-
-def find_customer(username):
-    """Find a customer by username."""
-    customers = load_customers()
-    for c in customers:
-        if c["username"] == username:
-            return c
-    return None
-
-
-def update_customer_balance(username, new_balance):
-    """Update a customer's balance."""
-    customers = load_customers()
-    for c in customers:
-        if c["username"] == username:
-            c["balance"] = new_balance
-            save_customers(customers)
-            return True
-    return False
-
 
 def customer_login():
     """Handle customer login or registration."""
     global current_customer
-    
+
     while True:
         clear_screen()
         print_header("Customer Login / Register")
@@ -117,13 +34,13 @@ def customer_login():
         print("  2. Register")
         print("  3. Back to Main Menu")
         print("=" * 50)
-        
+
         choice = input("Select option: ").strip()
-        
+
         if choice == '1':
             username = input("Enter username: ").strip()
             password = input("Enter password: ").strip()
-            
+
             customer = find_customer(username)
             if customer and customer["password"] == password:
                 current_customer = customer
@@ -134,33 +51,33 @@ def customer_login():
             else:
                 print("Invalid username or password.")
                 press_enter()
-                
+
         elif choice == '2':
             username = input("Choose a username: ").strip()
             if not username:
                 print("Username cannot be empty.")
                 press_enter()
                 continue
-                
+
             if find_customer(username):
                 print("Username already exists. Please choose another.")
                 press_enter()
                 continue
-            
+
             password = input("Choose a password: ").strip()
             if not password:
                 print("Password cannot be empty.")
                 press_enter()
                 continue
-            
+
             try:
-                initial_deposit = get_valid_input("Enter initial deposit amount ($): ", 
+                initial_deposit = get_valid_input("Enter initial deposit amount ($): ",
                                                    float, lambda x: x >= 0)
             except ValueError:
                 print("Invalid amount.")
                 press_enter()
                 continue
-            
+
             customers = load_customers()
             customers.append({
                 "username": username,
@@ -168,13 +85,13 @@ def customer_login():
                 "balance": initial_deposit
             })
             save_customers(customers)
-            
+
             current_customer = find_customer(username)
             print(f"\nAccount created successfully! Welcome, {username}!")
             print(f"Your balance: ${initial_deposit:.2f}")
             press_enter()
             return True
-            
+
         elif choice == '3':
             return False
         else:
@@ -183,29 +100,40 @@ def customer_login():
 
 
 def deposit_money():
-    """Allow customer to deposit more money."""
+    """Allow customer to deposit more money. Supports cancelling the deposit."""
     global current_customer
-    
+
     if not current_customer:
         print("Please login first.")
         press_enter()
         return
-    
+
     print_header("Deposit Money")
-    print(f"Current balance: ${current_customer['balance']:.2f}")
-    
-    try:
-        amount = get_valid_input("Enter deposit amount ($): ", float, 
-                                 lambda x: x > 0)
-    except ValueError:
-        print("Invalid amount.")
-        press_enter()
-        return
-    
+    print_centered(f"Current balance: ${current_customer['balance']:.2f}")
+
+    while True:
+        raw = input("\nEnter deposit amount ($) or type 'C' to cancel: ").strip()
+        if raw.lower() in ('c', 'cancel'):
+            print("\nDeposit cancelled. Your balance is unchanged.")
+            press_enter()
+            return
+
+        try:
+            amount = float(raw)
+        except ValueError:
+            print("Please enter a valid amount, or 'C' to cancel.")
+            continue
+
+        if amount <= 0:
+            print("Amount must be greater than zero.")
+            continue
+
+        break
+
     new_balance = current_customer["balance"] + amount
     update_customer_balance(current_customer["username"], new_balance)
     current_customer["balance"] = new_balance
-    
+
     print(f"\nDeposit successful!")
     print(f"New balance: ${new_balance:.2f}")
     press_enter()
@@ -214,21 +142,25 @@ def deposit_money():
 def view_account():
     """View customer account details."""
     global current_customer
-    
+
     if not current_customer:
         print("Please login first.")
         press_enter()
         return
-    
+
     print_header("My Account")
     print(f"Username   : {current_customer['username']}")
     print(f"Balance    : ${current_customer['balance']:.2f}")
-    
+
     # Show purchase history for this customer
     if os.path.exists(PURCHASES_FILE):
-        print("\n--- My Purchase History ---")
-        print(f"{'Package':<15} {'Price':<10} {'Voucher':<10} {'Purchased':<20} {'Expires':<20}")
-        print_separator()
+        print("\n           --- My Purchase History ---")
+        history_header = (
+            f"{'Package':<15} {'Price':<10} {'Voucher':<10} "
+            f"{'Purchased':<20} {'Expires':<20}"
+        )
+        print(history_header)
+        print_separator(length=len(history_header))
         found = False
         with open(PURCHASES_FILE, "r") as f:
             for line in f:
@@ -237,56 +169,41 @@ def view_account():
                     parts = line.split("|")
                     if parts[0] == current_customer["username"]:
                         print(f"{parts[1]:<15} ${parts[2]:<9} {parts[3]:<10} {parts[4]:<20} {parts[5]:<20}")
-                        print_separator()
+                        print_separator(length=len(history_header))
                         found = True
         if not found:
             print("No purchases yet.")
     else:
         print("\nNo purchases yet.")
-    
+
     press_enter()
 
 
 # ==================== PACKAGE MANAGEMENT ====================
 
-def load_packages():
-    """Load packages from text file."""
-    packages = []
-    if not os.path.exists(PACKAGES_FILE):
-        return packages
-    with open(PACKAGES_FILE, "r") as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                parts = line.split("|")
-                packages.append({
-                    "name": parts[0],
-                    "price": float(parts[1]),
-                    "duration": int(parts[2])
-                })
-    return packages
-
-
 def display_packages(affordable_only=False):
-    """Show all available WiFi packages or only affordable ones."""
+    """Show all available (Active) WiFi packages, or only affordable ones."""
     packages = load_packages()
-    
+    # Customers should only ever see packages the admin has marked Active.
+    packages = [p for p in packages if p.get("status", "Active") == "Active"]
+
     if affordable_only and current_customer:
         packages = [p for p in packages if p["price"] <= current_customer["balance"]]
         print_header("Affordable WiFi Packages")
-        print(f"Your balance: ${current_customer['balance']:.2f}")
+        print_centered(f"Your balance: ${current_customer['balance']:.2f}")
     else:
         print_header("Available WiFi Packages")
-    
+
     print(f"{'No.':<5} {'Package':<15} {'Duration':<12} {'Price':<10}")
     print_separator()
-    
+
     if not packages:
         print("No packages available.")
         return []
-    
+
     for i, p in enumerate(packages, 1):
-        print(f"{i:<5} {p['name']:<15} {p['duration']:<12} mins ${p['price']:.2f}")
+        duration_str = f"{p['duration']} mins"
+        print(f"{i:<5} {p['name']:<15} {duration_str:<12} ${p['price']:.2f}")
     return packages
 
 
@@ -302,7 +219,7 @@ def generate_unique_voucher_code():
                 if line:
                     parts = line.split("|")
                     existing_codes.add(parts[3])
-    
+
     while True:
         chars = string.ascii_uppercase + string.digits
         code = ''.join(random.choice(chars) for _ in range(8))
@@ -322,7 +239,7 @@ def print_receipt(customer_name, package_name, price, voucher_code,
                   purchase_time, expiration_time):
     """Print a formatted purchase receipt."""
     print_separator("=")
-    print("           PURCHASE RECEIPT")
+    print_centered("PURCHASE RECEIPT")
     print_separator("=")
     print(f"Customer  : {customer_name}")
     print(f"Package   : {package_name}")
@@ -331,20 +248,20 @@ def print_receipt(customer_name, package_name, price, voucher_code,
     print(f"Purchased : {purchase_time}")
     print(f"Expires   : {expiration_time}")
     print_separator("=")
-    print("  Thank you for your purchase!")
-    print("  Please keep your voucher code safe.")
+    print_centered("Thank you for your purchase!")
+    print_centered("Please keep your voucher code safe.")
     print_separator("=")
 
 
 def purchase_package():
     """Handle the complete purchase flow for a customer."""
     global current_customer
-    
+
     if not current_customer:
         print("Please login first.")
         press_enter()
         return
-    
+
     packages = display_packages(affordable_only=True)
 
     if not packages:
@@ -354,7 +271,7 @@ def purchase_package():
         return
 
     try:
-        choice = get_valid_input("\nSelect package number: ", int,
+        choice = get_valid_input("\nSelect package number (e.g. 1/2/3...): ", int,
                                  lambda x: 1 <= x <= len(packages))
     except ValueError:
         print("Invalid selection.")
@@ -362,7 +279,7 @@ def purchase_package():
         return
 
     package = packages[choice - 1]
-    
+
     print(f"\n--- Purchase Summary ---")
     print(f"Package   : {package['name']}")
     print(f"Price     : ${package['price']:.2f}")
@@ -386,7 +303,7 @@ def purchase_package():
         new_balance = current_customer["balance"] - package["price"]
         update_customer_balance(current_customer["username"], new_balance)
         current_customer["balance"] = new_balance
-        
+
         # Generate voucher
         voucher_code = generate_unique_voucher_code()
         purchase_time = datetime.now()
@@ -439,18 +356,16 @@ def check_voucher():
 def customer_menu():
     """Customer menu loop."""
     global current_customer
-    
+
     # Force login/register first
     if not customer_login():
         return
-    
+
     while True:
         clear_screen()
-        print("\n" + "=" * 50)
-        print(" " * 12 + "CUSTOMER MENU")
-        print("=" * 50)
-        print(f"  User: {current_customer['username']}")
-        print(f"  Balance: ${current_customer['balance']:.2f}")
+        print_header("Customer Menu")
+        print_centered(f"User: {current_customer['username']}")
+        print_centered(f"Balance: ${current_customer['balance']:.2f}")
         print("=" * 50)
         print("  1. View Packages")
         print("  2. Buy Voucher")
