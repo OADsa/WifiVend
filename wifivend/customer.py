@@ -10,6 +10,7 @@ import random
 import string
 from datetime import datetime, timedelta
 
+# These imports provide shared display, validation, storage, and package tools.
 from common import (
     clear_screen, press_enter, print_header, print_centered, print_separator,
     get_valid_input, PURCHASES_FILE,
@@ -23,6 +24,8 @@ current_customer = None
 
 # ==================== CUSTOMER AUTHENTICATION ====================
 
+# This code displays the customer access screen and handles both existing-user
+# login and new-account registration.
 def customer_login():
     """Handle customer login or registration."""
     global current_customer
@@ -37,6 +40,7 @@ def customer_login():
 
         choice = input("Select option: ").strip()
 
+        # This block validates an existing customer's username and password.
         if choice == '1':
             username = input("Enter username: ").strip()
             password = input("Enter password: ").strip()
@@ -52,6 +56,8 @@ def customer_login():
                 print("Invalid username or password.")
                 press_enter()
 
+        # This block validates registration details, saves the new account,
+        # and immediately signs in the newly registered customer.
         elif choice == '2':
             username = input("Choose a username: ").strip()
             if not username:
@@ -70,6 +76,8 @@ def customer_login():
                 press_enter()
                 continue
 
+            # This block ensures the starting deposit is numeric and is not
+            # less than zero.
             try:
                 initial_deposit = get_valid_input("Enter initial deposit amount ($): ",
                                                    float, lambda x: x >= 0)
@@ -92,6 +100,7 @@ def customer_login():
             press_enter()
             return True
 
+        # This block returns to the main menu without logging anyone in.
         elif choice == '3':
             return False
         else:
@@ -99,10 +108,13 @@ def customer_login():
             press_enter()
 
 
+# This code accepts a positive deposit or lets the customer cancel, then saves
+# the new account balance in customers.txt.
 def deposit_money():
     """Allow customer to deposit more money. Supports cancelling the deposit."""
     global current_customer
 
+    # This check prevents balance changes when nobody is logged in.
     if not current_customer:
         print("Please login first.")
         press_enter()
@@ -111,6 +123,7 @@ def deposit_money():
     print_header("Deposit Money")
     print_centered(f"Current balance: ${current_customer['balance']:.2f}")
 
+    # This block validates the deposit and continues asking after bad input.
     while True:
         raw = input("\nEnter deposit amount ($) or type 'C' to cancel: ").strip()
         if raw.lower() in ('c', 'cancel'):
@@ -130,6 +143,7 @@ def deposit_money():
 
         break
 
+    # This block updates both the saved record and the current session copy.
     new_balance = current_customer["balance"] + amount
     update_customer_balance(current_customer["username"], new_balance)
     current_customer["balance"] = new_balance
@@ -139,10 +153,13 @@ def deposit_money():
     press_enter()
 
 
+# This code displays the signed-in customer's details and filters the purchase
+# file so only that customer's transaction history is shown.
 def view_account():
     """View customer account details."""
     global current_customer
 
+    # This check stops unauthenticated users from opening an account page.
     if not current_customer:
         print("Please login first.")
         press_enter()
@@ -153,6 +170,8 @@ def view_account():
     print(f"Balance    : ${current_customer['balance']:.2f}")
 
     # Show purchase history for this customer
+    # This block reads and displays matching purchase records when the file is
+    # available; otherwise it reports that there is no history yet.
     if os.path.exists(PURCHASES_FILE):
         print("\n           --- My Purchase History ---")
         history_header = (
@@ -181,12 +200,15 @@ def view_account():
 
 # ==================== PACKAGE MANAGEMENT ====================
 
+# This code loads active packages, optionally filters out packages the current
+# customer cannot afford, and displays the result as a numbered table.
 def display_packages(affordable_only=False):
     """Show all available (Active) WiFi packages, or only affordable ones."""
     packages = load_packages()
     # Customers should only ever see packages the admin has marked Active.
     packages = [p for p in packages if p.get("status", "Active") == "Active"]
 
+    # This block applies the balance filter during the purchase process.
     if affordable_only and current_customer:
         packages = [p for p in packages if p["price"] <= current_customer["balance"]]
         print_header("Affordable WiFi Packages")
@@ -197,6 +219,7 @@ def display_packages(affordable_only=False):
     print(f"{'No.':<5} {'Package':<15} {'Duration':<12} {'Price':<10}")
     print_separator()
 
+    # This block handles the case where there is nothing available to display.
     if not packages:
         print("No packages available.")
         return []
@@ -209,6 +232,8 @@ def display_packages(affordable_only=False):
 
 # ==================== VOUCHER MANAGEMENT ====================
 
+# This code gathers all existing voucher codes, then creates random codes until
+# it finds an unused eight-character combination.
 def generate_unique_voucher_code():
     """Generate a unique 8-character alphanumeric voucher code."""
     existing_codes = set()
@@ -220,6 +245,7 @@ def generate_unique_voucher_code():
                     parts = line.split("|")
                     existing_codes.add(parts[3])
 
+    # This loop guarantees that the returned voucher is unique in purchases.txt.
     while True:
         chars = string.ascii_uppercase + string.digits
         code = ''.join(random.choice(chars) for _ in range(8))
@@ -227,6 +253,7 @@ def generate_unique_voucher_code():
             return code
 
 
+# This code appends one completed purchase to the permanent transaction file.
 def save_purchase(customer_name, package_name, price, voucher_code,
                   purchase_time, expiration_time):
     """Save purchase record to text file."""
@@ -235,6 +262,7 @@ def save_purchase(customer_name, package_name, price, voucher_code,
                 f"{voucher_code}|{purchase_time}|{expiration_time}\n")
 
 
+# This code formats the important purchase and voucher details as a receipt.
 def print_receipt(customer_name, package_name, price, voucher_code,
                   purchase_time, expiration_time):
     """Print a formatted purchase receipt."""
@@ -253,10 +281,13 @@ def print_receipt(customer_name, package_name, price, voucher_code,
     print_separator("=")
 
 
+# This code manages the full buying process: authentication, affordable-package
+# selection, confirmation, payment, voucher generation, storage, and receipt.
 def purchase_package():
     """Handle the complete purchase flow for a customer."""
     global current_customer
 
+    # This check prevents a purchase when no customer is signed in.
     if not current_customer:
         print("Please login first.")
         press_enter()
@@ -264,12 +295,14 @@ def purchase_package():
 
     packages = display_packages(affordable_only=True)
 
+    # This block stops the purchase if the balance cannot cover any package.
     if not packages:
         print("\nYou don't have enough balance for any package.")
         print("Please deposit more money first.")
         press_enter()
         return
 
+    # This block ensures the customer selects a package number in the list.
     try:
         choice = get_valid_input("\nSelect package number (e.g. 1/2/3...): ", int,
                                  lambda x: 1 <= x <= len(packages))
@@ -286,32 +319,37 @@ def purchase_package():
     print(f"Duration  : {package['duration']} minutes")
     print(f"Balance   : ${current_customer['balance']:.2f}")
 
+    # This block gives the customer a final opportunity to cancel the order.
     confirm = input("Confirm purchase? (y/n): ").strip().lower()
     if confirm != 'y':
         print("Purchase cancelled.")
         press_enter()
         return
 
-    # Check balance again
+    # This code checks the balance again immediately before charging the account.
     if current_customer["balance"] < package["price"]:
         print("Insufficient balance. Please deposit more money.")
         press_enter()
         return
 
+    # This block completes the payment and voucher transaction while reporting
+    # unexpected errors instead of closing the entire application.
     try:
-        # Deduct balance
+        # This code deducts the price from the saved and current balances.
         new_balance = current_customer["balance"] - package["price"]
         update_customer_balance(current_customer["username"], new_balance)
         current_customer["balance"] = new_balance
 
-        # Generate voucher
+        # This code generates the voucher and calculates its expiration date.
         voucher_code = generate_unique_voucher_code()
         purchase_time = datetime.now()
         expiration_time = purchase_time + timedelta(minutes=package['duration'])
 
+        # This code converts both times into a consistent storage/display format.
         purchase_time_str = purchase_time.strftime("%Y-%m-%d %H:%M:%S")
         expiration_time_str = expiration_time.strftime("%Y-%m-%d %H:%M:%S")
 
+        # This code permanently stores the purchase before printing its receipt.
         save_purchase(current_customer["username"], package['name'], package['price'],
                       voucher_code, purchase_time_str, expiration_time_str)
 
@@ -325,6 +363,8 @@ def purchase_package():
         press_enter()
 
 
+# This code looks up an entered voucher code and displays its owner, package,
+# price, purchase time, and expiration time when found.
 def check_voucher():
     """Check voucher status by code."""
     if not os.path.exists(PURCHASES_FILE):
@@ -332,6 +372,7 @@ def check_voucher():
         press_enter()
         return
 
+    # This block normalizes the code to uppercase and searches every purchase.
     code = input("Enter voucher code: ").strip().upper()
     found = False
     with open(PURCHASES_FILE, "r") as f:
@@ -353,11 +394,13 @@ def check_voucher():
     press_enter()
 
 
+# This code controls the signed-in customer menu and calls the function that
+# corresponds to each selected option until the customer logs out.
 def customer_menu():
     """Customer menu loop."""
     global current_customer
 
-    # Force login/register first
+    # This code requires a successful login or registration before continuing.
     if not customer_login():
         return
 
@@ -377,6 +420,7 @@ def customer_menu():
 
         choice = input("Select option: ").strip()
 
+        # This block routes each valid menu choice to its customer feature.
         if choice == '1':
             clear_screen()
             display_packages()
@@ -389,6 +433,7 @@ def customer_menu():
             deposit_money()
         elif choice == '5':
             view_account()
+        # This block clears the active session before returning to the main menu.
         elif choice == '6':
             current_customer = None
             print("Logged out successfully.")
