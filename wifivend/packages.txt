@@ -2,4 +2,3 @@
 2|1 Hour|60|3.50|Active
 3|2 Hours|120|6.00|Active
 4|5 Hours|300|12.00|Active
-6|Student Promo|340|13.00|Active

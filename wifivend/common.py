@@ -12,6 +12,77 @@ ADMIN_FILE = os.path.join(BASE_DIR, "admin.txt")
 DEFAULT_WIDTH = 50
 
 
+# ==================== CLASSES AND OBJECTS ====================
+
+# This class represents one customer account. Its methods convert between an
+# object and the pipe-delimited format used in customers.txt.
+class Customer:
+    """Store and manage one customer's account data."""
+
+    def __init__(self, username, password, balance):
+        self.username = username
+        self.password = password
+        self.balance = float(balance)
+
+    @classmethod
+    def from_record(cls, record):
+        """Create a Customer object from one text-file record."""
+        parts = record.split("|")
+        if len(parts) != 3:
+            raise ValueError("customer record must contain 3 fields")
+        return cls(parts[0], parts[1], float(parts[2]))
+
+    def to_record(self):
+        """Convert this object into the format stored in customers.txt."""
+        return f"{self.username}|{self.password}|{self.balance:.2f}"
+
+    # These methods preserve the existing dictionary-style access used by the
+    # menus while the stored account is now a real Customer object.
+    def __getitem__(self, key):
+        return getattr(self, key)
+
+    def __setitem__(self, key, value):
+        setattr(self, key, value)
+
+
+# This class represents one WiFi package and contains the behavior needed to
+# create the object from either the current or legacy packages.txt format.
+class WifiPackage:
+    """Store and manage one WiFi package's data."""
+
+    def __init__(self, package_id, name, duration, price, status="Active"):
+        self.id = int(package_id)
+        self.name = name
+        self.duration = int(duration)
+        self.price = float(price)
+        self.status = status
+
+    @classmethod
+    def from_record(cls, record, legacy_id=None):
+        """Create a WifiPackage object from a current or legacy record."""
+        parts = record.split("|")
+        if len(parts) == 5:
+            return cls(parts[0], parts[1], parts[2], parts[3], parts[4])
+        if len(parts) == 3 and legacy_id is not None:
+            return cls(legacy_id, parts[0], parts[2], parts[1], "Active")
+        raise ValueError("package record must contain 3 or 5 fields")
+
+    def to_record(self):
+        """Convert this object into the current packages.txt format."""
+        return f"{self.id}|{self.name}|{self.duration}|{self.price:.2f}|{self.status}"
+
+    # These methods let the unchanged menus access package objects using the
+    # same keys they previously used with dictionaries.
+    def __getitem__(self, key):
+        return getattr(self, key)
+
+    def __setitem__(self, key, value):
+        setattr(self, key, value)
+
+    def get(self, key, default=None):
+        return getattr(self, key, default)
+
+
 # ==================== TERMINAL / UI HELPERS ====================
 
 # This code clears the terminal using the correct command for the operating
@@ -74,32 +145,43 @@ def get_valid_input(prompt, input_type=str, validation=None):
 
 # ==================== CUSTOMER STORAGE ====================
 
-# This code reads every customer record and converts each pipe-delimited line
-# into a dictionary that is convenient for the rest of the program to use.
+# This code reads every valid customer record and creates a Customer object.
+# Invalid records are reported and skipped instead of crashing the program.
 def load_customers():
     """Load customers from text file."""
     customers = []
     if not os.path.exists(CUSTOMERS_FILE):
         return customers
-    with open(CUSTOMERS_FILE, "r") as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                parts = line.split("|")
-                customers.append({
-                    "username": parts[0],
-                    "password": parts[1],
-                    "balance": float(parts[2])
-                })
+    try:
+        with open(CUSTOMERS_FILE, "r", encoding="utf-8") as f:
+            for line_number, line in enumerate(f, 1):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    customers.append(Customer.from_record(line))
+                except (ValueError, TypeError) as error:
+                    print(f"Warning: skipped invalid customer record on line "
+                          f"{line_number}: {error}")
+    except OSError as error:
+        print(f"Unable to read customer data: {error}")
     return customers
 
 
 # This code writes the complete customer list back to customers.txt.
 def save_customers(customers):
     """Save customers list back to text file."""
-    with open(CUSTOMERS_FILE, "w") as f:
-        for c in customers:
-            f.write(f"{c['username']}|{c['password']}|{c['balance']:.2f}\n")
+    try:
+        with open(CUSTOMERS_FILE, "w", encoding="utf-8") as f:
+            for customer in customers:
+                if not isinstance(customer, Customer):
+                    customer = Customer(customer["username"], customer["password"],
+                                        customer["balance"])
+                f.write(customer.to_record() + "\n")
+        return True
+    except (OSError, ValueError, TypeError, KeyError) as error:
+        print(f"Unable to save customer data: {error}")
+        return False
 
 
 # This code searches the stored customers for an exact username match.
@@ -119,8 +201,7 @@ def update_customer_balance(username, new_balance):
     for c in customers:
         if c["username"] == username:
             c["balance"] = new_balance
-            save_customers(customers)
-            return True
+            return save_customers(customers)
     return False
 
 # This code reads the WiFi packages and supports both the old three-field file
@@ -136,34 +217,24 @@ def load_packages():
     if not os.path.exists(PACKAGES_FILE):
         return packages
 
-    # This block removes blank lines before processing package records.
-    with open(PACKAGES_FILE, "r") as f:
-        lines = [line.strip() for line in f if line.strip()]
+    # This block removes blank lines before processing package records and
+    # handles file access errors without closing the program.
+    try:
+        with open(PACKAGES_FILE, "r", encoding="utf-8") as f:
+            lines = [line.strip() for line in f if line.strip()]
+    except OSError as error:
+        print(f"Unable to read package data: {error}")
+        return packages
 
     legacy_format_detected = False
     for i, line in enumerate(lines, 1):
-        parts = line.split("|")
-        # This block converts a current-format line into a package dictionary.
-        if len(parts) == 5:
-            packages.append({
-                "id": int(parts[0]),
-                "name": parts[1],
-                "duration": int(parts[2]),
-                "price": float(parts[3]),
-                "status": parts[4],
-            })
-        # This block converts older package records and supplies their missing
-        # ID and status fields.
-        elif len(parts) == 3:
-            # Legacy format: name|price|duration
-            legacy_format_detected = True
-            packages.append({
-                "id": i,
-                "name": parts[0],
-                "duration": int(parts[2]),
-                "price": float(parts[1]),
-                "status": "Active",
-            })
+        try:
+            parts = line.split("|")
+            if len(parts) == 3:
+                legacy_format_detected = True
+            packages.append(WifiPackage.from_record(line, legacy_id=i))
+        except (ValueError, TypeError) as error:
+            print(f"Warning: skipped invalid package record on line {i}: {error}")
 
     # This block upgrades an old package file after it has been loaded.
     if legacy_format_detected:
@@ -175,9 +246,19 @@ def load_packages():
 # This code saves packages using the current five-field storage format.
 def save_packages(packages):
     """Save packages list back to text file (id|name|duration|price|status)."""
-    with open(PACKAGES_FILE, "w") as f:
-        for p in packages:
-            f.write(f"{p['id']}|{p['name']}|{p['duration']}|{p['price']:.2f}|{p['status']}\n")
+    try:
+        with open(PACKAGES_FILE, "w", encoding="utf-8") as f:
+            for package in packages:
+                if not isinstance(package, WifiPackage):
+                    package = WifiPackage(
+                        package["id"], package["name"], package["duration"],
+                        package["price"], package["status"]
+                    )
+                f.write(package.to_record() + "\n")
+        return True
+    except (OSError, ValueError, TypeError, KeyError) as error:
+        print(f"Unable to save package data: {error}")
+        return False
 
 
 # This code creates an ID greater than every existing package ID.
@@ -206,6 +287,38 @@ def is_duplicate_package(packages, duration, price, exclude_id=None):
     return None
 
 
+# ==================== PURCHASE STORAGE ====================
+
+# This code safely reads purchase records used by both customer and admin
+# features. A damaged line is skipped with a warning instead of causing an
+# IndexError or ValueError elsewhere in the program.
+def load_purchases():
+    """Load valid purchase records as lists of six text fields."""
+    purchases = []
+    if not os.path.exists(PURCHASES_FILE):
+        return purchases
+
+    try:
+        with open(PURCHASES_FILE, "r", encoding="utf-8") as f:
+            for line_number, line in enumerate(f, 1):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    parts = line.split("|")
+                    if len(parts) != 6:
+                        raise ValueError("purchase record must contain 6 fields")
+                    float(parts[2])
+                    purchases.append(parts)
+                except (ValueError, TypeError) as error:
+                    print(f"Warning: skipped invalid purchase record on line "
+                          f"{line_number}: {error}")
+    except OSError as error:
+        print(f"Unable to read purchase data: {error}")
+
+    return purchases
+
+
 # ==================== ADMIN CREDENTIAL STORAGE ====================
 
 # This code reads the administrator login and creates default credentials when
@@ -216,19 +329,31 @@ def load_admin_credentials():
         save_admin_credentials("admin", "admin123")
         return {"username": "admin", "password": "admin123"}
 
-    with open(ADMIN_FILE, "r") as f:
-        line = f.readline().strip()
+    try:
+        with open(ADMIN_FILE, "r", encoding="utf-8") as f:
+            line = f.readline().strip()
+    except OSError as error:
+        print(f"Unable to read administrator credentials: {error}")
+        return {"username": "admin", "password": "admin123"}
 
     if not line:
         save_admin_credentials("admin", "admin123")
         return {"username": "admin", "password": "admin123"}
 
     parts = line.split("|")
+    if len(parts) != 2 or not parts[0] or not parts[1]:
+        print("Warning: administrator credentials are invalid. Using defaults.")
+        return {"username": "admin", "password": "admin123"}
     return {"username": parts[0], "password": parts[1]}
 
 
 # This code saves the administrator username and password to admin.txt.
 def save_admin_credentials(username, password):
     """Save admin username/password back to text file."""
-    with open(ADMIN_FILE, "w") as f:
-        f.write(f"{username}|{password}\n")
+    try:
+        with open(ADMIN_FILE, "w", encoding="utf-8") as f:
+            f.write(f"{username}|{password}\n")
+        return True
+    except OSError as error:
+        print(f"Unable to save administrator credentials: {error}")
+        return False

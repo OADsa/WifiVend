@@ -15,7 +15,7 @@ from common import (
     clear_screen, press_enter, print_header, print_centered, print_separator,
     get_valid_input, PURCHASES_FILE,
     load_customers, save_customers, find_customer, update_customer_balance,
-    load_packages,
+    load_packages, load_purchases, Customer,
 )
 
 # Global variable to track current logged-in customer
@@ -87,12 +87,11 @@ def customer_login():
                 continue
 
             customers = load_customers()
-            customers.append({
-                "username": username,
-                "password": password,
-                "balance": initial_deposit
-            })
-            save_customers(customers)
+            customers.append(Customer(username, password, initial_deposit))
+            if not save_customers(customers):
+                print("Account could not be created. Please try again.")
+                press_enter()
+                continue
 
             current_customer = find_customer(username)
             print(f"\nAccount created successfully! Welcome, {username}!")
@@ -145,7 +144,10 @@ def deposit_money():
 
     # This block updates both the saved record and the current session copy.
     new_balance = current_customer["balance"] + amount
-    update_customer_balance(current_customer["username"], new_balance)
+    if not update_customer_balance(current_customer["username"], new_balance):
+        print("\nDeposit could not be saved. Your balance is unchanged.")
+        press_enter()
+        return
     current_customer["balance"] = new_balance
 
     print(f"\nDeposit successful!")
@@ -181,15 +183,11 @@ def view_account():
         print(history_header)
         print_separator(length=len(history_header))
         found = False
-        with open(PURCHASES_FILE, "r") as f:
-            for line in f:
-                line = line.strip()
-                if line:
-                    parts = line.split("|")
-                    if parts[0] == current_customer["username"]:
-                        print(f"{parts[1]:<15} ${parts[2]:<9} {parts[3]:<10} {parts[4]:<20} {parts[5]:<20}")
-                        print_separator(length=len(history_header))
-                        found = True
+        for parts in load_purchases():
+            if parts[0] == current_customer["username"]:
+                print(f"{parts[1]:<15} ${parts[2]:<9} {parts[3]:<10} {parts[4]:<20} {parts[5]:<20}")
+                print_separator(length=len(history_header))
+                found = True
         if not found:
             print("No purchases yet.")
     else:
@@ -237,13 +235,8 @@ def display_packages(affordable_only=False):
 def generate_unique_voucher_code():
     """Generate a unique 8-character alphanumeric voucher code."""
     existing_codes = set()
-    if os.path.exists(PURCHASES_FILE):
-        with open(PURCHASES_FILE, "r") as f:
-            for line in f:
-                line = line.strip()
-                if line:
-                    parts = line.split("|")
-                    existing_codes.add(parts[3])
+    for parts in load_purchases():
+        existing_codes.add(parts[3])
 
     # This loop guarantees that the returned voucher is unique in purchases.txt.
     while True:
@@ -257,9 +250,14 @@ def generate_unique_voucher_code():
 def save_purchase(customer_name, package_name, price, voucher_code,
                   purchase_time, expiration_time):
     """Save purchase record to text file."""
-    with open(PURCHASES_FILE, "a") as f:
-        f.write(f"{customer_name}|{package_name}|{price:.2f}|"
-                f"{voucher_code}|{purchase_time}|{expiration_time}\n")
+    try:
+        with open(PURCHASES_FILE, "a", encoding="utf-8") as f:
+            f.write(f"{customer_name}|{package_name}|{price:.2f}|"
+                    f"{voucher_code}|{purchase_time}|{expiration_time}\n")
+        return True
+    except OSError as error:
+        print(f"Unable to save purchase data: {error}")
+        return False
 
 
 # This code formats the important purchase and voucher details as a receipt.
@@ -336,8 +334,10 @@ def purchase_package():
     # unexpected errors instead of closing the entire application.
     try:
         # This code deducts the price from the saved and current balances.
-        new_balance = current_customer["balance"] - package["price"]
-        update_customer_balance(current_customer["username"], new_balance)
+        old_balance = current_customer["balance"]
+        new_balance = old_balance - package["price"]
+        if not update_customer_balance(current_customer["username"], new_balance):
+            raise OSError("the updated customer balance could not be saved")
         current_customer["balance"] = new_balance
 
         # This code generates the voucher and calculates its expiration date.
@@ -350,8 +350,13 @@ def purchase_package():
         expiration_time_str = expiration_time.strftime("%Y-%m-%d %H:%M:%S")
 
         # This code permanently stores the purchase before printing its receipt.
-        save_purchase(current_customer["username"], package['name'], package['price'],
-                      voucher_code, purchase_time_str, expiration_time_str)
+        if not save_purchase(current_customer["username"], package['name'],
+                             package['price'], voucher_code, purchase_time_str,
+                             expiration_time_str):
+            # Restore the original balance if the voucher record cannot be saved.
+            if update_customer_balance(current_customer["username"], old_balance):
+                current_customer["balance"] = old_balance
+            raise OSError("the purchase record could not be saved")
 
         clear_screen()
         print_receipt(current_customer["username"], package['name'], package['price'],
@@ -375,20 +380,16 @@ def check_voucher():
     # This block normalizes the code to uppercase and searches every purchase.
     code = input("Enter voucher code: ").strip().upper()
     found = False
-    with open(PURCHASES_FILE, "r") as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                parts = line.split("|")
-                if parts[3] == code:
-                    print_header("Voucher Details")
-                    print(f"Customer  : {parts[0]}")
-                    print(f"Package   : {parts[1]}")
-                    print(f"Price     : ${parts[2]}")
-                    print(f"Purchased : {parts[4]}")
-                    print(f"Expires   : {parts[5]}")
-                    found = True
-                    break
+    for parts in load_purchases():
+        if parts[3] == code:
+            print_header("Voucher Details")
+            print(f"Customer  : {parts[0]}")
+            print(f"Package   : {parts[1]}")
+            print(f"Price     : ${parts[2]}")
+            print(f"Purchased : {parts[4]}")
+            print(f"Expires   : {parts[5]}")
+            found = True
+            break
     if not found:
         print("Voucher not found.")
     press_enter()

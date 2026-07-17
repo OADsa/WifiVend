@@ -12,7 +12,7 @@ from common import (
     clear_screen, press_enter, print_header, print_centered, print_separator,
     get_valid_input, PACKAGES_FILE, PURCHASES_FILE, CUSTOMERS_FILE,
     load_packages, save_packages, get_next_package_id, is_duplicate_package,
-    load_customers, save_customers,
+    load_customers, save_customers, load_purchases, WifiPackage,
     load_admin_credentials, save_admin_credentials,
 )
 
@@ -137,8 +137,60 @@ def reset_customer_password():
         return
 
     customers[choice - 1]["password"] = new_password
-    save_customers(customers)
+    if not save_customers(customers):
+        print("Password reset could not be saved. Please try again.")
+        press_enter()
+        return
     print(f"Password for '{selected_customer['username']}' has been reset successfully.")
+    press_enter()
+
+
+# This code lets the administrator remove a customer account from customers.txt
+# after selecting the account and confirming the permanent action. Existing
+# purchases are intentionally kept for transaction history and sales reports.
+def delete_customer_account():
+    """Delete one customer account while preserving purchase records."""
+    customers = load_customers()
+    if not customers:
+        print("\nNo registered customers found.")
+        press_enter()
+        return
+
+    print_header("Delete Customer Account")
+    print("Registered Customers:")
+    for i, customer in enumerate(customers, 1):
+        print(f"{i}. {customer['username']} - Balance: ${customer['balance']:.2f}")
+
+    # This block ensures the administrator selects an existing customer.
+    try:
+        choice = get_valid_input(
+            "\nEnter customer number to delete: ", int,
+            lambda x: 1 <= x <= len(customers)
+        )
+    except ValueError:
+        print("Invalid selection.")
+        press_enter()
+        return
+
+    selected_customer = customers[choice - 1]
+    print(f"\nSelected customer: {selected_customer['username']}")
+    print("Purchase history will be preserved for transaction records.")
+
+    # This block protects customer data by requiring explicit confirmation.
+    confirm = input("Permanently delete this customer account? (y/n): ").strip().lower()
+    if confirm != 'y':
+        print("Customer account deletion cancelled.")
+        press_enter()
+        return
+
+    deleted_customer = customers.pop(choice - 1)
+    if not save_customers(customers):
+        print("Customer account could not be deleted. Please try again.")
+        press_enter()
+        return
+
+    print(f"Customer account '{deleted_customer['username']}' deleted successfully.")
+    print("The customer's purchase history was preserved.")
     press_enter()
 
 
@@ -151,12 +203,8 @@ def view_all_transactions():
         return
 
     is_wide, table_width = print_transaction_heading("All Transactions")
-    with open(PURCHASES_FILE, "r") as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                parts = line.split("|")
-                print_transaction(parts, is_wide, table_width)
+    for parts in load_purchases():
+        print_transaction(parts, is_wide, table_width)
     press_enter()
 
 
@@ -174,14 +222,10 @@ def search_transactions():
     found = False
 
     is_wide, table_width = print_transaction_heading("Search Results")
-    with open(PURCHASES_FILE, "r") as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                parts = line.split("|")
-                if search_name in parts[0].lower():
-                    print_transaction(parts, is_wide, table_width)
-                    found = True
+    for parts in load_purchases():
+        if search_name in parts[0].lower():
+            print_transaction(parts, is_wide, table_width)
+            found = True
     if not found:
         print("No transactions found for that customer.")
     press_enter()
@@ -193,14 +237,9 @@ def view_total_sales():
     """Calculate and display total sales."""
     total = 0.0
     count = 0
-    if os.path.exists(PURCHASES_FILE):
-        with open(PURCHASES_FILE, "r") as f:
-            for line in f:
-                line = line.strip()
-                if line:
-                    parts = line.split("|")
-                    total += float(parts[2])
-                    count += 1
+    for parts in load_purchases():
+        total += float(parts[2])
+        count += 1
     print_header("Total Sales Summary")
     print(f"Total Sales   : ${total:.2f}")
     print(f"Transactions  : {count}")
@@ -240,15 +279,14 @@ def add_new_package():
         return
 
     # This block builds and permanently saves the valid package record.
-    new_package = {
-        "id": get_next_package_id(packages),
-        "name": name,
-        "duration": duration,
-        "price": price,
-        "status": "Active",
-    }
+    new_package = WifiPackage(
+        get_next_package_id(packages), name, duration, price, "Active"
+    )
     packages.append(new_package)
-    save_packages(packages)
+    if not save_packages(packages):
+        print("Package could not be saved. Please try again.")
+        press_enter()
+        return
     print("Package added successfully.")
     press_enter()
 
@@ -349,7 +387,10 @@ def edit_package():
     # This block applies and saves the validated changes.
     package["duration"] = new_duration
     package["price"] = new_price
-    save_packages(packages)
+    if not save_packages(packages):
+        print("Package changes could not be saved. Please try again.")
+        press_enter()
+        return
     print("Package updated successfully.")
     press_enter()
 
@@ -385,7 +426,10 @@ def delete_package():
         return
 
     deleted = packages.pop(choice - 1)
-    save_packages(packages)
+    if not save_packages(packages):
+        print("Package could not be deleted. Please try again.")
+        press_enter()
+        return
     print(f"Package '{deleted['name']}' deleted successfully.")
     press_enter()
 
@@ -451,7 +495,10 @@ def change_admin_credentials():
         press_enter()
         return
 
-    save_admin_credentials(new_username, new_password)
+    if not save_admin_credentials(new_username, new_password):
+        print("New credentials could not be saved. Please try again.")
+        press_enter()
+        return
     print("Admin credentials updated successfully.")
     press_enter()
 
@@ -475,8 +522,9 @@ def admin_menu():
         print("  7. View Packages")
         print("  8. View All Customers")
         print("  9. Reset Customer Password")
-        print(" 10. Change Admin Credentials")
-        print(" 11. Back to Main Menu")
+        print(" 10. Delete Customer Account")
+        print(" 11. Change Admin Credentials")
+        print(" 12. Back to Main Menu")
         print("=" * 50)
 
         choice = input("Select option: ").strip()
@@ -501,8 +549,10 @@ def admin_menu():
         elif choice == '9':
             reset_customer_password()
         elif choice == '10':
-            change_admin_credentials()
+            delete_customer_account()
         elif choice == '11':
+            change_admin_credentials()
+        elif choice == '12':
             break
         else:
             print("Invalid option. Please try again.")
